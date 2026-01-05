@@ -29,7 +29,7 @@ This is the **recommended hosting environment** for this project.
 - **Image**: Ubuntu 22.04
 - **Shape**: `VM.Standard.E2.1.Micro`
 - **CPU / RAM**: Default (Free Tier)
-- **Networking**: Default VCN
+- **Networking**: Default VCN with internet connectivity
 - **SSH Keys**:
   - Generate a new key pair
   - Download the private key (`.key` file)
