@@ -101,7 +101,7 @@ This will:
 
 Open another Terminal window and watch the logs:
 ```bash
-cd /Users/subramanyaacharpadamanur/Documents/ScalpingStrategyOANDA
+cd xauusd-live-trader-bot-oanda/
 tail -f live_trader.log
 ```
 
@@ -330,7 +330,7 @@ pip3 install oandapyV20 pandas pytz
 **"No module named 'config'"**
 ```bash
 # Make sure you're in the right directory
-cd /Users/subramanyaacharpadamanur/Documents/ScalpingStrategyOANDA
+cd xauusd-live-trader-bot-oanda/
 ```
 
 ## 📚 Next Steps
