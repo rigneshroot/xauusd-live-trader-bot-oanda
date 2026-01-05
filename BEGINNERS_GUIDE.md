@@ -73,7 +73,7 @@ This system **automatically trades** based on the Opening Range (OR) strategy:
 
 Open Terminal and run:
 ```bash
-cd /Users/subramanyaacharpadamanur/Documents/ScalpingStrategyOANDA
+cd /xauusd-live-trader-bot-oanda
 pip3 install oandapyV20 pandas pytz
 ```
 
