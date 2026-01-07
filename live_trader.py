@@ -174,6 +174,8 @@ class LiveTrader:
             if success:
                 # Mark trade taken in session state
                 self.session_state.mark_trade_taken()
+                # Reset entry detector to clean up state
+                self.entry_detector.reset()
                 logger.info("✅ Trade executed - session closed")
             else:
                 logger.error("❌ Trade execution failed")

@@ -14,6 +14,8 @@ from oandapyV20.endpoints import pricing
 import logging
 import time
 from threading import Thread, Event
+from datetime import datetime
+import pytz
 
 from config import OANDA_ACCESS_TOKEN, OANDA_ACCOUNT_ID, INSTRUMENT
 
@@ -131,9 +133,6 @@ class StreamingClient:
             ask = float(asks[0]['price'])
             
             # Parse timestamp
-            from datetime import datetime
-            import pytz
-            
             # OANDA timestamps are in RFC3339 format with nanosecond precision
             # Python's fromisoformat only handles up to microseconds
             # Truncate to microseconds: '2026-01-02T21:59:05.222899102+00:00' -> '2026-01-02T21:59:05.222899+00:00'

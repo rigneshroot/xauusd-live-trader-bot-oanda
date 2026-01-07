@@ -48,6 +48,7 @@ class EntryDetector:
         
         # Entry signal
         self.entry_signal = None
+        self.signal_delivered = False  # Track if signal was returned to caller
         
         # Candle history (for FVG detection)
         self.candle_history = []
@@ -72,12 +73,13 @@ class EntryDetector:
         Returns:
             dict or None: Entry signal if confirmed, None otherwise
         """
-        # Store OR range on first call
+        # Always update OR range (in case it changes during OR building period)
+        # This prevents using stale OR values if range updates
         if self.or_high is None:
-            self.or_high = or_high
-            self.or_low = or_low
-            self.or_range = or_high - or_low
-            logger.debug(f"OR range set: {or_high:.2f} - {or_low:.2f}")
+            logger.debug(f"OR range initialized: {or_high:.2f} - {or_low:.2f}")
+        self.or_high = or_high
+        self.or_low = or_low
+        self.or_range = or_high - or_low
         
         # Add to history (limit to 50 candles to prevent memory growth)
         self.candle_history.append(candle)
@@ -92,9 +94,15 @@ class EntryDetector:
                 logger.debug(f"Skipping candle {self.candles_since_or_lock}/{SKIP_FIRST_N}")
             return None
         
-        # If already confirmed or invalidated, stop processing
+        # If already confirmed or invalidated, return signal only once
         if self.confirmed or self.invalidated:
-            return self.entry_signal
+            if self.signal_delivered:
+                # Signal already returned, don't return it again
+                return None
+            else:
+                # First time returning signal, mark as delivered
+                self.signal_delivered = True
+                return self.entry_signal
         
         # State machine processing
         if not self.breakout_seen:
