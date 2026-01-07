@@ -101,8 +101,16 @@ class LiveTrader:
                     time.sleep(60)  # Check every minute
                     continue
                 
+                # Store previous state to detect resets
+                prev_date = self.session_state.current_date
+                
                 # Update session state
                 self.session_state.update(self.candle_buffer)
+                
+                # Reset entry detector if new day started
+                if self.session_state.current_date != prev_date and prev_date is not None:
+                    logger.info("New trading day detected - resetting entry detector")
+                    self.entry_detector.reset()
                 
                 # Check for new 1m candle
                 latest_candles = self.candle_buffer.get_latest_1m(1)
