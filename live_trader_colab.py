@@ -73,10 +73,12 @@ logger = logging.getLogger(__name__)
 # UTILITY FUNCTIONS
 # ============================================================================
 
+# Cache timezone object for performance
+_NY_TZ = pytz.timezone('America/New_York')
+
 def get_ny_time():
     """Get current time in New York timezone."""
-    ny_tz = pytz.timezone('America/New_York')
-    return datetime.datetime.now(ny_tz)
+    return datetime.datetime.now(_NY_TZ)
 
 def is_market_open():
     """Check if market is currently open."""
@@ -192,6 +194,7 @@ class EntryDetector:
         self.confirmed = False
         self.invalidated = False
         self.entry_signal = None
+        self.signal_delivered = False  # Track if signal was returned to caller
         self.candle_history = []
         self.candles_since_or_lock = 0
         self.or_high = None
@@ -200,10 +203,10 @@ class EntryDetector:
     
     def process_candle(self, candle, or_high, or_low):
         """Process single candle."""
-        if self.or_high is None:
-            self.or_high = or_high
-            self.or_low = or_low
-            self.or_range = or_high - or_low
+        # Always update OR range (in case it changes during OR building period)
+        self.or_high = or_high
+        self.or_low = or_low
+        self.or_range = or_high - or_low
         
         self.candle_history.append(candle)
         self.candles_since_or_lock += 1
@@ -211,8 +214,13 @@ class EntryDetector:
         if self.candles_since_or_lock <= SKIP_FIRST_N:
             return None
         
+        # If already confirmed or invalidated, return signal only once
         if self.confirmed or self.invalidated:
-            return self.entry_signal
+            if self.signal_delivered:
+                return None
+            else:
+                self.signal_delivered = True
+                return self.entry_signal
         
         if not self.breakout_seen:
             self._check_breakout(candle)
@@ -500,6 +508,7 @@ def main(dry_run=True):
                             
                             if executor.place_order(signal):
                                 session_state.mark_trade_taken()
+                                entry_detector.reset()  # Reset detector after trade
                                 logger.info("✅ Trade executed - session ended")
                                 return
             
