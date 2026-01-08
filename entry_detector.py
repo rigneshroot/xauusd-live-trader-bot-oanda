@@ -61,6 +61,28 @@ class EntryDetector:
         
         logger.debug("EntryDetector state reset")
     
+    def _reset_after_invalidation(self):
+        """Partial reset after invalidation to search for new breakouts."""
+        logger.info("Resetting detector to search for new breakout...")
+        
+        # Reset breakout/retest state
+        self.breakout_seen = False
+        self.breakout_direction = None
+        self.breakout_time = None
+        self.breakout_candle = None
+        self.retest_active = False
+        self.retest_candle = None
+        self.retest_start_idx = None
+        
+        # Clear invalidation flag
+        self.invalidated = False
+        self.confirmed = False
+        self.entry_signal = None
+        self.signal_delivered = False
+        
+        # Keep: candle_history, candles_since_or_lock, OR range
+        # This allows us to continue monitoring without losing context
+    
     def process_candle(self, candle, or_high, or_low):
         """
         Process a single candle and update internal state.
@@ -161,12 +183,12 @@ class EntryDetector:
         # Check for invalidation (re-entering OR)
         if self.breakout_direction == 'long' and candle.close < self.or_high:
             logger.info(f"INVALIDATED: Long breakout re-entered OR at {candle.timestamp}")
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         
         if self.breakout_direction == 'short' and candle.close > self.or_low:
             logger.info(f"INVALIDATED: Short breakout re-entered OR at {candle.timestamp}")
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         
         # Check if candle enters retest band
@@ -196,12 +218,12 @@ class EntryDetector:
         # Check for invalidation (breaking wrong side of band)
         if self.breakout_direction == 'long' and candle.low < band_low:
             logger.info(f"INVALIDATED: Broke below retest band at {candle.timestamp}")
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         
         if self.breakout_direction == 'short' and candle.high > band_high:
             logger.info(f"INVALIDATED: Broke above retest band at {candle.timestamp}")
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         
         # Get previous candle

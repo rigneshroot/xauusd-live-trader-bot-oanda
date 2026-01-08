@@ -201,6 +201,19 @@ class EntryDetector:
         self.or_low = None
         self.or_range = None
     
+    def _reset_after_invalidation(self):
+        """Partial reset after invalidation to search for new breakouts."""
+        logger.info("Resetting detector to search for new breakout...")
+        self.breakout_seen = False
+        self.breakout_direction = None
+        self.retest_active = False
+        self.retest_candle = None
+        self.invalidated = False
+        self.confirmed = False
+        self.entry_signal = None
+        self.signal_delivered = False
+        # Keep: candle_history, candles_since_or_lock, OR range
+    
     def process_candle(self, candle, or_high, or_low):
         """Process single candle."""
         # Always update OR range (in case it changes during OR building period)
@@ -254,11 +267,11 @@ class EntryDetector:
         
         # Invalidation
         if self.breakout_direction == 'long' and candle.close < self.or_high:
-            self.invalidated = True
+            self._reset_after_invalidation()
             logger.info("INVALIDATED: Re-entered OR")
             return
         if self.breakout_direction == 'short' and candle.close > self.or_low:
-            self.invalidated = True
+            self._reset_after_invalidation()
             logger.info("INVALIDATED: Re-entered OR")
             return
         
@@ -282,10 +295,10 @@ class EntryDetector:
         
         # Invalidation
         if self.breakout_direction == 'long' and candle.low < band_low:
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         if self.breakout_direction == 'short' and candle.high > band_high:
-            self.invalidated = True
+            self._reset_after_invalidation()
             return
         
         prev = self.candle_history[-2]
