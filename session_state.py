@@ -14,7 +14,7 @@ import logging
 from enum import Enum
 
 from utils import get_ny_time
-from config import SESSION_START, OR_LOCK_TIME, SESSION_END
+from config import SESSION_START, OR_LOCK_TIME, SESSION_END, ENABLE_OR_FILTER, MIN_OR_RANGE, MAX_OR_RANGE
 
 logger = logging.getLogger(__name__)
 
@@ -105,7 +105,20 @@ class SessionStateMachine:
                 self.or_open_time = or_candles[0].timestamp
                 self.or_close_time = or_candles[-1].timestamp
                 
-                logger.info(f"OR LOCKED at 09:35 | High: {self.or_high:.2f} | Low: {self.or_low:.2f}")
+                or_range = self.or_high - self.or_low
+                
+                # Check OR range filters
+                if ENABLE_OR_FILTER:
+                    if or_range < MIN_OR_RANGE:
+                        logger.warning(f"OR range too small ({or_range:.2f} < {MIN_OR_RANGE}) - skipping trading today")
+                        self._transition_to(SessionState.SESSION_CLOSED)
+                        return
+                    if or_range > MAX_OR_RANGE:
+                        logger.warning(f"OR range too large ({or_range:.2f} > {MAX_OR_RANGE}) - skipping trading today")
+                        self._transition_to(SessionState.SESSION_CLOSED)
+                        return
+                
+                logger.info(f"OR LOCKED at 09:35 | High: {self.or_high:.2f} | Low: {self.or_low:.2f} | Range: {or_range:.2f}")
                 self._transition_to(SessionState.OR_LOCKED)
             else:
                 logger.warning("No OR candles found at 09:35, staying in OR_BUILDING")

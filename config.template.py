@@ -63,6 +63,43 @@ RETEST_PCT = 0.05  # How close to OR boundary counts as a "retest"
                    # LOOSE: 0.08 (8% - more setups but lower quality)
 
 # ============================================================================
+# MARKET CONDITION FILTERS
+# ============================================================================
+
+# Maximum invalidation resets per session
+MAX_INVALIDATIONS = 2  # Stop after 2 failed attempts (CONSERVATIVE)
+                       # Based on analysis: avg 2.5 invalidations/session
+                       # CONSERVATIVE: 2 (recommended - would have avoided recent losses)
+                       # BALANCED: 3
+                       # AGGRESSIVE: 5
+
+# Opening Range size filters
+ENABLE_OR_FILTER = True  # Enable OR range filtering
+MIN_OR_RANGE = 12.0  # Minimum OR range in points (CONSERVATIVE)
+                     # Based on analysis: recent sessions had ~11.4 points
+                     # CONSERVATIVE: 12.0 (would have skipped recent losses)
+                     # BALANCED: 8.0
+                     # AGGRESSIVE: 5.0
+MAX_OR_RANGE = 18.0  # Maximum OR range in points
+                     # CONSERVATIVE: 18.0
+                     # BALANCED: 20.0
+                     # AGGRESSIVE: 25.0
+
+# Time-based entry filter
+MIN_ENTRY_TIME = '10:00'  # Don't enter before this time (NY timezone)
+                          # Avoids early false signals
+                          # CONSERVATIVE: '10:00' (would have avoided Jan 8 loss)
+                          # BALANCED: '09:50'
+                          # AGGRESSIVE: '09:40'
+
+# Stop Loss buffer
+SL_BUFFER_PCT = 0.5  # SL buffer as percentage of OR range
+                     # Prevents tight SLs in volatile conditions
+                     # CONSERVATIVE: 0.5 (50% of OR range)
+                     # BALANCED: 0.3 (30% of OR range)
+                     # AGGRESSIVE: 0.2 (20% of OR range)
+
+# ============================================================================
 # SESSION TIMES (New York timezone - don't change)
 # ============================================================================
 SESSION_START = '09:30'  # Market open

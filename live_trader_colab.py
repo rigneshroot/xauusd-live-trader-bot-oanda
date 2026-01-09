@@ -47,6 +47,14 @@ SKIP_FIRST_N = 5
 FVG_LOOKBACK = 3
 RETEST_PCT = 0.05
 
+# Market Condition Filters
+MAX_INVALIDATIONS = 2
+ENABLE_OR_FILTER = True
+MIN_OR_RANGE = 12.0
+MAX_OR_RANGE = 18.0
+MIN_ENTRY_TIME = '10:00'
+SL_BUFFER_PCT = 0.5
+
 # Session Times (NY timezone)
 SESSION_START = datetime.time(9, 30)
 OR_LOCK_TIME = datetime.time(9, 35)
@@ -148,7 +156,20 @@ class SessionStateMachine:
             if or_candles:
                 self.or_high = max(c.high for c in or_candles)
                 self.or_low = min(c.low for c in or_candles)
-                logger.info(f"OR LOCKED | High: {self.or_high:.2f} | Low: {self.or_low:.2f}")
+                or_range = self.or_high - self.or_low
+                
+                # Check OR range filters
+                if ENABLE_OR_FILTER:
+                    if or_range < MIN_OR_RANGE:
+                        logger.warning(f"OR range too small ({or_range:.2f} < {MIN_OR_RANGE}) - skipping trading")
+                        self.state = SessionState.SESSION_CLOSED
+                        return
+                    if or_range > MAX_OR_RANGE:
+                        logger.warning(f"OR range too large ({or_range:.2f} > {MAX_OR_RANGE}) - skipping trading")
+                        self.state = SessionState.SESSION_CLOSED
+                        return
+                
+                logger.info(f"OR LOCKED | High: {self.or_high:.2f} | Low: {self.or_low:.2f} | Range: {or_range:.2f}")
                 self.state = SessionState.OR_LOCKED
         
         elif self.state == SessionState.OR_LOCKED:
@@ -194,16 +215,41 @@ class EntryDetector:
         self.confirmed = False
         self.invalidated = False
         self.entry_signal = None
-        self.signal_delivered = False  # Track if signal was returned to caller
+        self.signal_delivered = False
         self.candle_history = []
         self.candles_since_or_lock = 0
         self.or_high = None
         self.or_low = None
         self.or_range = None
+        self.invalidation_count = 0
+        self.last_invalidation_time = None
+        self.consecutive_fast_invalidations = 0
     
     def _reset_after_invalidation(self):
         """Partial reset after invalidation to search for new breakouts."""
-        logger.info("Resetting detector to search for new breakout...")
+        self.invalidation_count += 1
+        current_time = datetime.datetime.now()
+        
+        # Check for consecutive fast invalidations
+        if self.last_invalidation_time:
+            time_diff = (current_time - self.last_invalidation_time).total_seconds() / 60
+            if time_diff < 10:
+                self.consecutive_fast_invalidations += 1
+                if self.consecutive_fast_invalidations >= 2:
+                    logger.warning("Multiple rapid invalidations - market too choppy, stopping")
+                    self.invalidated = True
+                    return
+            else:
+                self.consecutive_fast_invalidations = 0
+        
+        self.last_invalidation_time = current_time
+        
+        if self.invalidation_count >= MAX_INVALIDATIONS:
+            logger.warning(f"Max invalidations ({MAX_INVALIDATIONS}) reached - stopping")
+            self.invalidated = True
+            return
+        
+        logger.info(f"Resetting detector (invalidation {self.invalidation_count}/{MAX_INVALIDATIONS})...")
         self.breakout_seen = False
         self.breakout_direction = None
         self.retest_active = False
@@ -212,11 +258,10 @@ class EntryDetector:
         self.confirmed = False
         self.entry_signal = None
         self.signal_delivered = False
-        # Keep: candle_history, candles_since_or_lock, OR range
     
     def process_candle(self, candle, or_high, or_low):
         """Process single candle."""
-        # Always update OR range (in case it changes during OR building period)
+        # Always update OR range
         self.or_high = or_high
         self.or_low = or_low
         self.or_range = or_high - or_low
@@ -225,6 +270,14 @@ class EntryDetector:
         self.candles_since_or_lock += 1
         
         if self.candles_since_or_lock <= SKIP_FIRST_N:
+            return None
+        
+        # Check minimum entry time
+        candle_time = candle.timestamp.time()
+        min_hour, min_minute = map(int, MIN_ENTRY_TIME.split(':'))
+        min_time = datetime.time(min_hour, min_minute)
+        
+        if candle_time < min_time:
             return None
         
         # If already confirmed or invalidated, return signal only once

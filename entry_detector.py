@@ -10,7 +10,8 @@ Processes candles one at a time without lookahead.
 """
 
 import logging
-from config import SKIP_FIRST_N, FVG_LOOKBACK, RETEST_PCT
+from datetime import time as dt_time
+from config import SKIP_FIRST_N, FVG_LOOKBACK, RETEST_PCT, MAX_INVALIDATIONS, MIN_ENTRY_TIME, SL_BUFFER_PCT
 
 logger = logging.getLogger(__name__)
 
@@ -59,11 +60,41 @@ class EntryDetector:
         self.or_low = None
         self.or_range = None
         
+        # Invalidation tracking
+        self.invalidation_count = 0
+        self.last_invalidation_time = None
+        self.consecutive_fast_invalidations = 0
+        
         logger.debug("EntryDetector state reset")
     
     def _reset_after_invalidation(self):
         """Partial reset after invalidation to search for new breakouts."""
-        logger.info("Resetting detector to search for new breakout...")
+        from datetime import datetime, timedelta
+        
+        self.invalidation_count += 1
+        current_time = datetime.now()
+        
+        # Check for consecutive fast invalidations (< 10 min apart)
+        if self.last_invalidation_time:
+            time_diff = (current_time - self.last_invalidation_time).total_seconds() / 60
+            if time_diff < 10:
+                self.consecutive_fast_invalidations += 1
+                if self.consecutive_fast_invalidations >= 2:
+                    logger.warning("Multiple rapid invalidations detected - market too choppy, stopping")
+                    self.invalidated = True
+                    return
+            else:
+                self.consecutive_fast_invalidations = 0
+        
+        self.last_invalidation_time = current_time
+        
+        # Check if we've hit the max invalidation limit
+        if self.invalidation_count >= MAX_INVALIDATIONS:
+            logger.warning(f"Max invalidations ({MAX_INVALIDATIONS}) reached - stopping for session")
+            self.invalidated = True
+            return
+        
+        logger.info(f"Resetting detector (invalidation {self.invalidation_count}/{MAX_INVALIDATIONS})...")
         
         # Reset breakout/retest state
         self.breakout_seen = False
@@ -80,7 +111,7 @@ class EntryDetector:
         self.entry_signal = None
         self.signal_delivered = False
         
-        # Keep: candle_history, candles_since_or_lock, OR range
+        # Keep: candle_history, candles_since_or_lock, OR range, invalidation_count
         # This allows us to continue monitoring without losing context
     
     def process_candle(self, candle, or_high, or_low):
@@ -114,6 +145,15 @@ class EntryDetector:
         if self.candles_since_or_lock <= SKIP_FIRST_N:
             if logger.isEnabledFor(logging.DEBUG):
                 logger.debug(f"Skipping candle {self.candles_since_or_lock}/{SKIP_FIRST_N}")
+            return None
+        
+        # Check minimum entry time
+        candle_time = candle.timestamp.time()
+        min_time = dt_time(*map(int, MIN_ENTRY_TIME.split(':')))
+        
+        if candle_time < min_time:
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug(f"Before minimum entry time ({MIN_ENTRY_TIME})")
             return None
         
         # If already confirmed or invalidated, return signal only once
@@ -319,28 +359,33 @@ class EntryDetector:
         """
         entry_price = candle.close
         
+        # Calculate SL buffer based on OR range
+        sl_buffer = SL_BUFFER_PCT * self.or_range
+        
         # Calculate SL and TP
         if model == 1 and self.retest_candle is not None:
-            # Model 1: Use retest structure for SL
+            # Model 1: Use retest structure for SL with buffer
             if self.breakout_direction == 'long':
-                sl = self.retest_candle.low
+                sl = self.retest_candle.low - sl_buffer
                 if sl >= entry_price:  # Safety fallback
-                    sl = entry_price - 0.50
+                    sl = entry_price - max(0.50, sl_buffer)
                 sl_dist = entry_price - sl
                 tp = entry_price + (2 * sl_dist)
+                logger.info(f"SL buffer applied: {sl_buffer:.2f} points ({SL_BUFFER_PCT*100}% of OR range {self.or_range:.2f})")
             else:  # short
-                sl = self.retest_candle.high
+                sl = self.retest_candle.high + sl_buffer
                 if sl <= entry_price:  # Safety fallback
-                    sl = entry_price + 0.50
+                    sl = entry_price + max(0.50, sl_buffer)
                 sl_dist = sl - entry_price
                 tp = entry_price - (2 * sl_dist)
+                logger.info(f"SL buffer applied: {sl_buffer:.2f} points ({SL_BUFFER_PCT*100}% of OR range {self.or_range:.2f})")
         
         else:
-            # Model 2 or fallback: Use ATR-based SL
+            # Model 2 or fallback: Use ATR-based SL with buffer
             # Calculate simple ATR from recent candles
             recent = self.candle_history[-14:] if len(self.candle_history) >= 14 else self.candle_history
             atr = sum(c.high - c.low for c in recent) / len(recent)
-            sl_dist = 0.8 * atr
+            sl_dist = max(0.8 * atr, sl_buffer)  # Use larger of ATR or buffer
             
             if self.breakout_direction == 'long':
                 sl = entry_price - sl_dist
@@ -348,6 +393,8 @@ class EntryDetector:
             else:  # short
                 sl = entry_price + sl_dist
                 tp = entry_price - (2 * sl_dist)
+            
+            logger.info(f"SL distance: {sl_dist:.2f} points (ATR-based with buffer)")
         
         self.entry_signal = {
             'model': model,
