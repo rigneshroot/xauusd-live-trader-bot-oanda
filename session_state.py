@@ -83,6 +83,18 @@ class SessionStateMachine:
         self.or_close_time = None
         self.trade_taken = False
         self.current_date = new_date
+        
+        # Check if we're starting after OR window - skip today's session
+        ny_time = get_ny_time()
+        current_time = ny_time.time()
+        or_lock = datetime.time(9, 35)
+        
+        if current_time >= or_lock:
+            logger.warning(
+                f"Starting after OR window (current: {current_time.strftime('%H:%M')}, "
+                f"OR lock: 09:35) - skipping today's session"
+            )
+            self._transition_to(SessionState.SESSION_CLOSED)
     
     def _handle_pre_or(self, current_time):
         """Handle PRE_OR state - waiting for session start."""
